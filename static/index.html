@@ -5,72 +5,96 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Give Me One Ticket</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; background: #f7f8fa; }
-    .card { max-width: 760px; background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,.06); }
-    label { display:block; margin-top: 10px; font-weight: bold; }
-    input { width: 100%; padding: 8px; margin-top: 4px; }
-    button { margin-top: 14px; margin-right: 8px; padding: 8px 12px; }
-    pre { background: #111827; color: #d1fae5; padding: 12px; border-radius: 8px; }
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f6f8fb; }
+    .grid { display:grid; gap:16px; grid-template-columns: 1fr 1fr; }
+    .card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+    input { width:100%; padding:8px; margin:6px 0 10px; }
+    button { margin-right:8px; padding:8px 12px; }
+    pre { background:#0f172a; color:#c7f9cc; padding:12px; border-radius:8px; min-height:180px; }
   </style>
 </head>
 <body>
+<h2>抢票业务流（真实浏览器执行）</h2>
+<div class="grid">
   <div class="card">
-    <h2>可视化抢票任务（方案一原型）</h2>
-    <p>用户先自行登录并定位到目标票，填写信息后开启自动抢票。</p>
-
-    <label>购票网站 URL</label>
+    <h3>1) 创建浏览器会话</h3>
     <input id="site_url" placeholder="https://www.damai.cn" />
-
-    <label>演出/车次名称</label>
-    <input id="event_name" placeholder="周杰伦演唱会 / G1234" />
-
-    <label>购买按钮 CSS Selector</label>
-    <input id="selector" placeholder="#buyNowBtn" />
-
-    <div>
-      <button onclick="createTask()">创建任务</button>
-      <button onclick="startTask()">开始抢票</button>
-      <button onclick="pauseTask()">暂停</button>
-    </div>
-
-    <p>当前任务ID：<strong id="taskId">无</strong></p>
-    <pre id="panel">等待任务...</pre>
+    <button onclick="createSession()">打开浏览器并跳转</button>
+    <button onclick="markReady()">我已登录并选好票</button>
+    <p>Session: <b id="sessionId">无</b></p>
   </div>
 
+  <div class="card">
+    <h3>2) 创建任务并启动</h3>
+    <input id="event_name" placeholder="演出/车次名" />
+    <input id="selector_buy_button" placeholder="购买按钮选择器，如 #buyNowBtn" />
+    <input id="refresh_selector" placeholder="可选：刷新按钮选择器" />
+    <button onclick="createTask()">创建任务</button>
+    <button onclick="startTask()">开始抢票</button>
+    <button onclick="pauseTask()">暂停</button>
+    <p>Task: <b id="taskId">无</b></p>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px;">
+  <h3>状态</h3>
+  <pre id="panel">等待中...</pre>
+</div>
+
 <script>
-let currentTaskId = null;
+let sessionId = null;
+let taskId = null;
 let timer = null;
+
+async function createSession() {
+  const site_url = document.getElementById('site_url').value;
+  const res = await fetch('/api/sessions', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({site_url})});
+  const data = await res.json();
+  if (data.session_id) {
+    sessionId = data.session_id;
+    document.getElementById('sessionId').innerText = sessionId;
+  }
+  document.getElementById('panel').textContent = JSON.stringify(data, null, 2);
+}
+
+async function markReady() {
+  if (!sessionId) return;
+  const res = await fetch(`/api/sessions/${sessionId}/ready`, {method:'POST'});
+  const data = await res.json();
+  document.getElementById('panel').textContent = JSON.stringify(data, null, 2);
+}
 
 async function createTask() {
   const payload = {
     site_url: document.getElementById('site_url').value,
     event_name: document.getElementById('event_name').value,
-    selector_buy_button: document.getElementById('selector').value,
+    selector_buy_button: document.getElementById('selector_buy_button').value,
+    refresh_selector: document.getElementById('refresh_selector').value || null,
   };
-  const res = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const res = await fetch('/api/tasks', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
   const data = await res.json();
-  currentTaskId = data.task_id;
-  document.getElementById('taskId').innerText = currentTaskId;
+  taskId = data.task_id;
+  document.getElementById('taskId').innerText = taskId;
   poll();
 }
 
 async function startTask() {
-  if (!currentTaskId) return;
-  await fetch(`/api/tasks/${currentTaskId}/start`, { method:'POST' });
+  if (!taskId || !sessionId) return;
+  await fetch(`/api/tasks/${taskId}/start`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({session_id: sessionId})});
   poll();
 }
 
 async function pauseTask() {
-  if (!currentTaskId) return;
-  await fetch(`/api/tasks/${currentTaskId}/pause`, { method:'POST' });
+  if (!taskId) return;
+  await fetch(`/api/tasks/${taskId}/pause`, {method:'POST'});
   poll();
 }
 
 function poll() {
   if (timer) clearInterval(timer);
   timer = setInterval(async () => {
-    if (!currentTaskId) return;
-    const res = await fetch(`/api/tasks/${currentTaskId}`);
+    if (!taskId) return;
+    const res = await fetch(`/api/tasks/${taskId}`);
     const data = await res.json();
     document.getElementById('panel').textContent = JSON.stringify(data, null, 2);
   }, 1000);

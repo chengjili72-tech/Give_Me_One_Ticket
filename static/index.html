@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Give Me One Ticket</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f7f8fa; }
+    .card { max-width: 760px; background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,.06); }
+    label { display:block; margin-top: 10px; font-weight: bold; }
+    input { width: 100%; padding: 8px; margin-top: 4px; }
+    button { margin-top: 14px; margin-right: 8px; padding: 8px 12px; }
+    pre { background: #111827; color: #d1fae5; padding: 12px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>可视化抢票任务（方案一原型）</h2>
+    <p>用户先自行登录并定位到目标票，填写信息后开启自动抢票。</p>
+
+    <label>购票网站 URL</label>
+    <input id="site_url" placeholder="https://www.damai.cn" />
+
+    <label>演出/车次名称</label>
+    <input id="event_name" placeholder="周杰伦演唱会 / G1234" />
+
+    <label>购买按钮 CSS Selector</label>
+    <input id="selector" placeholder="#buyNowBtn" />
+
+    <div>
+      <button onclick="createTask()">创建任务</button>
+      <button onclick="startTask()">开始抢票</button>
+      <button onclick="pauseTask()">暂停</button>
+    </div>
+
+    <p>当前任务ID：<strong id="taskId">无</strong></p>
+    <pre id="panel">等待任务...</pre>
+  </div>
+
+<script>
+let currentTaskId = null;
+let timer = null;
+
+async function createTask() {
+  const payload = {
+    site_url: document.getElementById('site_url').value,
+    event_name: document.getElementById('event_name').value,
+    selector_buy_button: document.getElementById('selector').value,
+  };
+  const res = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const data = await res.json();
+  currentTaskId = data.task_id;
+  document.getElementById('taskId').innerText = currentTaskId;
+  poll();
+}
+
+async function startTask() {
+  if (!currentTaskId) return;
+  await fetch(`/api/tasks/${currentTaskId}/start`, { method:'POST' });
+  poll();
+}
+
+async function pauseTask() {
+  if (!currentTaskId) return;
+  await fetch(`/api/tasks/${currentTaskId}/pause`, { method:'POST' });
+  poll();
+}
+
+function poll() {
+  if (timer) clearInterval(timer);
+  timer = setInterval(async () => {
+    if (!currentTaskId) return;
+    const res = await fetch(`/api/tasks/${currentTaskId}`);
+    const data = await res.json();
+    document.getElementById('panel').textContent = JSON.stringify(data, null, 2);
+  }, 1000);
+}
+</script>
+</body>
+</html>
